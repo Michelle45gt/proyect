@@ -1,0 +1,99 @@
+from machine import Pin, reset, PWM
+from time import sleep
+from HCSR04 import HCSR04
+
+#configura sensores infrarrojos
+SID = Pin(22, Pin.IN)
+SII = Pin(23, Pin.IN)
+
+#configura ingresos puente H (driver)
+IN1 = PWM(Pin(19), 5000)
+IN2 = PWM(Pin(21), 5000)
+IN3 = PWM(Pin(18), 5000)
+IN4 = PWM(Pin(5), 5000)
+direccion=1
+#configuracion HC-SR04ditancia
+S1 = HCSR04(trigger_pin=17, echo_pin=16, echo_timeout_us=10000)
+S2 = HCSR04(trigger_pin=12, echo_pin=14, echo_timeout_us=10000)
+S3 = HCSR04(trigger_pin=27, echo_pin=26, echo_timeout_us=10000)
+
+#configuracion del boton
+B1 = Pin(15, Pin.IN, Pin.PULL_UP)
+
+IN1.duty(0)
+IN2.duty(0)
+IN3.duty(0)
+IN4.duty(0)
+
+#Bucle de pausa antes del arranque
+while B1.value()==1:
+    sleep(0.1)
+    
+#Arranque del robot
+print("Inicio")
+sleep(0.2)
+
+#Bucle principal
+while True:
+    dD=int(S1.distance_cm())
+    dC=int(S2.distance_cm())
+    dI=int(S3.distance_cm())
+    #Condicion 1
+    if dC<30 and SID.value()==1 and SII.value()==1 and dC>1:
+        IN1.duty(0)
+        IN2.duty(1023)
+        IN3.duty(0)
+        IN4.duty(1023)
+    #Condicion 2
+    if dC>=30 and SID.value()==1 and SII.value()==1:
+        if direccion==1:
+            IN1.duty(0)
+            IN2.duty(800)
+            IN3.duty(800)
+            IN4.duty(0)
+        elif direccion==2:
+            IN1.duty(800)
+            IN2.duty(0)
+            IN3.duty(0)
+            IN4.duty(800)
+    
+    if dD<20 and SID.value()==1 and SII.value()==1 and dD>1:
+        IN1.duty(0)
+        IN2.duty(800)
+        IN3.duty(800)
+        IN4.duty(0)
+        direccion=1
+    
+    if dI<20 and SID.value()==1 and SII.value()==1 and dI>1:
+        IN1.duty(800)
+        IN2.duty(0)
+        IN3.duty(0)
+        IN4.duty(800)
+        direccion=2
+    #Condicion 3
+    if SID.value()==0 or SII.value()==0:
+        IN1.duty(1000)
+        IN2.duty(0)
+        IN3.duty(1000)
+        IN4.duty(0)
+        sleep(0.1)
+        if direccion==1:
+            IN1.duty(0)
+            IN2.duty(800)
+            IN3.duty(800)
+            IN4.duty(0)
+        elif direccion==2:
+            IN1.duty(800)
+            IN2.duty(0)
+            IN3.duty(0)
+            IN4.duty(800)
+        sleep(0.05)
+    #reiniciar el programa
+    if B1.value()==0:
+        IN1.duty(0)
+        IN2.duty(0)
+        IN3.duty(0)
+        IN4.duty(0)
+        sleep(0.1)
+        print("reset")
+        reset()

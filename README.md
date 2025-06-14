@@ -1,2 +1,0 @@
-# proyect
-codigos minu sumos
