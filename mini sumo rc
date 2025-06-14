@@ -1,0 +1,203 @@
+#include <Bluepad32.h>
+
+// ==================================================
+// 1) Pines del Driver de Motor (ej. L298N, L9110, etc.)
+// ==================================================
+#define IN1 23  // Dirección Motor 1
+#define IN2 22  // Dirección Motor 1
+#define IN3 21  // Dirección Motor 2
+#define IN4 19  // Dirección Motor 2
+
+
+#define LED_STATUS 13 // LED indicador  b ñ nn   
+
+// Zona muerta para evitar movimientos involuntarios
+const int deadZone = 30;
+
+// Último estado de movimiento para evitar comandos repetitivos
+int lastMoveState = 0;
+
+// Almacenar referencia a los mandos conectados
+ControllerPtr myControllers[BP32_MAX_GAMEPADS];
+
+// ==================================================
+// 2) Callbacks: Se llaman automáticamente cuando 
+//    se conecta o desconecta un mando
+// ==================================================
+void onConnectedController(ControllerPtr ctl) {
+    for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+        if (myControllers[i] == nullptr) {
+            myControllers[i] = ctl;
+            Serial.print("✅ Mando conectado, index = ");
+            Serial.println(i);
+            return;
+        }
+    }
+    Serial.println("⚠️ Se conectó un mando pero no hay espacio disponible.");
+}
+
+void onDisconnectedController(ControllerPtr ctl) {
+    for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+        if (myControllers[i] == ctl) {
+            myControllers[i] = nullptr;
+            Serial.print("❌ Mando desconectado, index = ");
+            Serial.println(i);
+            stopMotors(); // Detener motores si se desconecta el mando
+            digitalWrite(LED_STATUS, LOW); // Apagar LED al desconectar el control
+            return;
+        }
+    }
+    Serial.println("⚠️ Se desconectó un mando que no estaba en myControllers.");
+}
+
+// ==================================================
+// 3) Control de motores sin velocidad (solo ON/OFF)
+// ==================================================
+void setMotorDirection(int moveState) {
+    // Evitar enviar comandos repetitivos si no hay cambios en la entrada
+    if (moveState == lastMoveState) return;
+    lastMoveState = moveState;
+
+    switch (moveState) {
+        case 1: // Adelante
+            digitalWrite(IN1, HIGH);
+            digitalWrite(IN2, LOW);
+            digitalWrite(IN3, HIGH);
+            digitalWrite(IN4, LOW);
+            digitalWrite(LED_STATUS, HIGH); // Encender LED
+            Serial.println("🟢 Moviendo Adelante");
+            break;
+        case 2: // Atrás
+            digitalWrite(IN1, LOW);
+            digitalWrite(IN2, HIGH);
+            digitalWrite(IN3, LOW);
+            digitalWrite(IN4, HIGH);
+            digitalWrite(LED_STATUS, HIGH); // Encender LED
+            Serial.println("🟢 Moviendo Atrás");
+            break;
+        case 3: // Derecha
+            digitalWrite(IN1, HIGH);
+            digitalWrite(IN2, LOW);
+            digitalWrite(IN3, LOW);
+            digitalWrite(IN4, HIGH);
+            digitalWrite(LED_STATUS, HIGH); // Encender LED
+            Serial.println("🟢 Girando Derecha");
+            break;
+        case 4: // Izquierda
+            digitalWrite(IN1, LOW);
+            digitalWrite(IN2, HIGH);
+            digitalWrite(IN3, HIGH);
+            digitalWrite(IN4, LOW);
+            digitalWrite(LED_STATUS, HIGH); // Encender LED
+            Serial.println("🟢 Girando Izquierda");
+            break;
+        default: // Detener
+            stopMotors();
+            Serial.println("🔴 Detenido");
+            break;
+    }
+}
+
+// ==================================================
+// 4) Procesar joystick izquierdo (adelante/atrás) y
+//    joystick derecho (izquierda/derecha)
+// ==================================================
+void processGamepad(ControllerPtr ctl) {
+    if (!ctl || !ctl->isConnected()) {
+        return;
+    }
+
+    // Leer valores del joystick izquierdo (adelante/atrás)
+    int ly = ctl->axisY();
+    // Leer valores del joystick derecho (izquierda/derecha)
+    int rx = ctl->axisRX();
+
+    // Aplicar zona muerta
+    bool moveForward = (ly < -deadZone);
+    bool moveBackward = (ly > deadZone);
+    bool turnRight = (rx > deadZone);
+    bool turnLeft = (rx < -deadZone);
+
+    // Determinar el movimiento basado en prioridades
+    int moveState = 0; 
+    if (moveForward) moveState = 1;
+    else if (moveBackward) moveState = 2;
+    else if (turnRight) moveState = 3;
+    else if (turnLeft) moveState = 4;
+
+    setMotorDirection(moveState);
+}
+
+// ==================================================
+// 5) Procesar todos los mandos conectados
+// ==================================================
+void processControllers() {
+    bool anyConnected = false;
+
+    for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+        if (myControllers[i] && myControllers[i]->isConnected()) {
+            processGamepad(myControllers[i]);
+            anyConnected = true;
+        }
+    }
+
+    // Si no hay controles conectados, detener motores y apagar LED
+    if (!anyConnected) {
+        stopMotors();
+        digitalWrite(LED_STATUS, LOW);
+    }
+}
+
+// ==================================================
+// 6) Detener los motores
+// ==================================================
+void stopMotors() {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, LOW);
+    digitalWrite(LED_STATUS, LOW); // Apagar LED cuando el robot está detenido
+}
+
+// ==================================================
+// 7) Setup
+// ==================================================
+void setup() {
+    Serial.begin(115200);
+
+    // Configurar pines de motor como salida
+    pinMode(IN1, OUTPUT);
+    pinMode(IN2, OUTPUT);
+    pinMode(IN3, OUTPUT);
+    pinMode(IN4, OUTPUT);
+    
+    // Configurar LED de estado
+    pinMode(LED_STATUS, OUTPUT);
+    digitalWrite(LED_STATUS, LOW); // Apagar LED al inicio
+
+    // Inicializar Bluepad32 con callbacks
+    BP32.setup(&onConnectedController, &onDisconnectedController);
+
+    // Si hay problemas de conexión, descomentar esto:
+    // BP32.forgetBluetoothKeys();
+    
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, LOW);
+    Serial.println("🚀 ESP32 listo, esperando conexión del control...");
+}
+
+// ==================================================
+// 8) Loop
+// ==================================================
+void loop() {
+    // Actualizar estado del control
+    BP32.update();
+
+    // Procesar entradas del control
+    processControllers();
+
+    // Pequeña pausa para evitar saturar la CPU
+    delay(50);  // Aumentamos a 50ms para estabilidad
+}
